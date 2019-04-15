@@ -1,7 +1,6 @@
 
 #datasheet: https://cdn-shop.adafruit.com/datasheets/Si1145-46-47.pdf
 ----------------------------------------------------------------------
-
 import smbus
 import time
 
@@ -13,12 +12,14 @@ COMMAND_REGISTER = 0X18    # write commands to this register (see pg. 22 of data
 HW_KEY_REGISTER = 0X07
 PARAM_WR = 0x17    # 'mailbox register for passing parameters from host to sequencer'
 UV_INDEX = 0x2C     #aux_data0/uvindex0
+UV_INDEX2 = 0x2D
 ALS_VIS_DATA0 = 0x22
+ALS_VIS_DATA1 = 0x23
 UCOEF0 = 0x13
 UCOEF1 = 0x14
 UCOEF2 = 0x15
 UCOEF3 = 0x16
-
+RESPONSE_REG = 0X20
 
 def write_to_hwkey(bus):
      bus.write_byte_data(SENSOR_ADDRESS, HW_KEY_REGISTER, 0x17)
@@ -29,7 +30,7 @@ def enable_UV_coeff(bus, register, number):
 
 def enable_UV_sensor(bus):     #write chlist to write parameter
      bus.write_byte_data(SENSOR_ADDRESS, PARAM_WR, 0xF0)
-     
+
 def force_measure(bus):     #force a single measurement
      bus.write_byte_data(SENSOR_ADDRESS, COMMAND_REGISTER, 0x06)
 
@@ -37,11 +38,26 @@ def get_UV_reading(bus):
      raw_reading = bus.read_byte_data(SENSOR_ADDRESS, UV_INDEX)
      print(raw_reading)
      return raw_reading
-     
+
+def get_UV_reading2(bus):
+     raw_uv_read = bus.read_byte_data(SENSOR_ADDRESS, UV_INDEX2)
+     print(raw_uv_read)
+     return raw_uv_read
+
 def get_vis_read(bus):
      raw_read_v = bus.read_byte_data(SENSOR_ADDRESS, ALS_VIS_DATA0)
      print(raw_read_v)
      return raw_read_v
+
+def get_vis_read2(bus):
+     raw_read_v2 = bus.read_byte_data(SENSOR_ADDRESS, ALS_VIS_DATA1)
+     print(raw_read_v2)
+     return raw_read_v2
+
+def get_response(bus):
+     resp_read = bus.read_byte_data(SENSOR_ADDRESS, RESPONSE_REG)
+     print(resp_read)
+     return resp_read
 
 write_to_hwkey(bus)
 enable_UV_coeff(bus, UCOEF0, 0x29)
@@ -51,9 +67,12 @@ enable_UV_coeff(bus, UCOEF3, 0x00)
 enable_UV_sensor(bus)
 force_measure(bus)
 
+time.sleep(0.01)
+
 get_UV_reading(bus)
+get_UV_reading2(bus)
 get_vis_read(bus)
-
-
+get_vis_read2(bus)
+get_response(bus)
 
 
