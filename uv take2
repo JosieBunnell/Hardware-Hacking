@@ -13,6 +13,7 @@ COMMAND_REGISTER = 0X18    # write commands to this register (see pg. 22 of data
 HW_KEY_REGISTER = 0X07
 PARAM_WR = 0x17    # 'mailbox register for passing parameters from host to sequencer'
 UV_INDEX = 0x2C     #aux_data0/uvindex0
+ALS_VIS_DATA0 = 0x22
 UCOEF0 = 0x13
 UCOEF1 = 0x14
 UCOEF2 = 0x15
@@ -20,7 +21,7 @@ UCOEF3 = 0x16
 
 
 def write_to_hwkey(bus):
-     write_byte_data(SENSOR_ADDRESS, HW_KEY_REGISTER, 0x17)
+     bus.write_byte_data(SENSOR_ADDRESS, HW_KEY_REGISTER, 0x17)
 
 def enable_UV_coeff(bus, register, number):
      write_param = [number]
@@ -34,9 +35,13 @@ def force_measure(bus):     #force a single measurement
 
 def get_UV_reading(bus):
      raw_reading = bus.read_byte_data(SENSOR_ADDRESS, UV_INDEX)
-     print(reading)
-     return reading
-
+     print(raw_reading)
+     return raw_reading
+     
+def get_vis_read(bus):
+     raw_read_v = bus.read_byte_data(SENSOR_ADDRESS, ALS_VIS_DATA0)
+     print(raw_read_v)
+     return raw_read_v
 
 write_to_hwkey(bus)
 enable_UV_coeff(bus, UCOEF0, 0x29)
@@ -47,6 +52,7 @@ enable_UV_sensor(bus)
 force_measure(bus)
 
 get_UV_reading(bus)
+get_vis_read(bus)
 
 
 
