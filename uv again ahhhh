@@ -1,4 +1,4 @@
-april 15/2019
+april 17/2019
 
 import smbus
 import time
@@ -22,46 +22,50 @@ RESPONSE_REG = 0X20
 NOP = 0x0
 CHLIST = 0x01
 EN_UV = 0x80
-ENALSVIS = 0x10
 PARAM_RD = 0x2E
-
-def wake_up(bus):     #writes initial command (equivalent of reset?) to command register to wake device up
-     bus.write_byte_data(SENSOR_ADDRESS, COMMAND_REGISTER, NOP)
+ENALSVIS = 0x10
+MEASRATE0 = 0x08
+PARAM_SET = 0xA0
 
 def write_to_hwkey(bus):     #writes 0x17 to hardware key register for some reason
      bus.write_byte_data(SENSOR_ADDRESS, HW_KEY_REGISTER, 0x17)
+     read_hwkey = bus.read_byte_data(SENSOR_ADDRESS, HW_KEY_REGISTER)
+     print(hex(read_hwkey))
+     return read_hwkey
 
 def write_parameter(bus, parameter, value):
      bus.write_byte_data(SENSOR_ADDRESS, PARAM_WR, value)
-     bus.write_byte_data(SENSOR_ADDRESS, COMMAND_REGISTER, parameter)
+     bus.write_byte_data(SENSOR_ADDRESS, COMMAND_REGISTER, parameter | PARAM_SET)
      param_read = bus.read_byte_data(SENSOR_ADDRESS, PARAM_RD)
-     print(param_read)
+     print(hex(param_read))
      return param_read
 
 def enable_UV_coeff(bus, register, number):
      bus.write_byte_data(SENSOR_ADDRESS, register, number)
 
-def force_measure(bus):     #force a single measurement
+def force_measure(bus):
      bus.write_byte_data(SENSOR_ADDRESS, COMMAND_REGISTER, 0x06)
 
 def get_UV_reading(bus):
-     raw_reading = bus.read_byte_data(SENSOR_ADDRESS, UV_INDEX)
-     print(raw_reading)
+     raw_reading = bus.read_word_data(SENSOR_ADDRESS, UV_INDEX)
+     print("UV reading " + str(raw_reading))
      return raw_reading
 
 def get_UV_reading2(bus):
-     raw_uv_read = bus.read_byte_data(SENSOR_ADDRESS, UV_INDEX2)
+     raw_uv_read = bus.read_word_data(SENSOR_ADDRESS, UV_INDEX2)
      print(raw_uv_read)
      return raw_uv_read
 
 def get_vis_read(bus):
-     raw_read_v = bus.read_byte_data(SENSOR_ADDRESS, ALS_VIS_DATA0)
-     print(raw_read_v)
+     raw_read_v = bus.read_word_data(SENSOR_ADDRESS, ALS_VIS_DATA0)
+     print("visible light reading " + str(raw_read_v))
      return raw_read_v
-     
+
 def get_vis_read2(bus):
-     raw_read_v2 = bus.read_byte_data(SENSOR_ADDRESS, ALS_VIS_DATA1)
+     raw_read_v2 = bus.read_word_data(SENSOR_ADDRESS, ALS_VIS_DATA1)
      print(raw_read_v2)
+     print(hex(raw_read_v2))
+     print(bin(raw_read_v2))
      return raw_read_v2
 
 def get_response(bus):
@@ -69,7 +73,6 @@ def get_response(bus):
      print(resp_read)
      return resp_read
 
-wake_up(bus)
 time.sleep(.01)
 
 write_to_hwkey(bus)
@@ -80,14 +83,17 @@ enable_UV_coeff(bus, UCOEF1, 0x89)
 enable_UV_coeff(bus, UCOEF2, 0x02)
 enable_UV_coeff(bus, UCOEF3, 0x00)
 
-write_parameter(bus, CHLIST, EN_UV)
-write_parameter(bus, CHLIST, ENALSVIS)
+write_parameter(bus, CHLIST, EN_UV | ENALSVIS)
+
 
 force_measure(bus)
 time.sleep(.01)
 
+LSB = get_vis_read(bus)
+MSB = get_vis_read2(bus)
+print("MSB + LSB = " +str(MSB+LSB))
+
 get_UV_reading(bus)
-get_UV_reading2(bus)
-get_vis_read(bus)
-get_vis_read2(bus)
+#get_UV_reading2(bus)
+
 get_response(bus)
