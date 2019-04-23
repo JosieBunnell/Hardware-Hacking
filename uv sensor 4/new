@@ -1,0 +1,101 @@
+import smbus
+import time
+
+bus = smbus.SMBus(1) # connects to i2C channel 1 and GPIO i2C pins
+
+UV_SENSOR_ADDR = 0x60 # the i2c device address of the UV sensor
+
+COMMAND_REGISTER = 0X18    # write commands to this register (see pg. 22 of data sheet)
+HW_KEY_REGISTER = 0X07     # hardware key...must write 0x17 to this i2c address for operation
+PARAM_WR = 0x17    # 'mailbox register for passing parameters from host to sequencer'
+UV_DATA0 = 0x2C     #aux_data0/uvindex0, stores LSB of UV reading
+UV_DATA1 = 0x2D     #aux_data1/uvindex1, stores MSB of UV reading
+ALS_VIS_DATA0 = 0x22     # stores LSB of visible light reading
+ALS_VIS_DATA1 = 0x23     # stores MSB of visible light reading
+UCOEF0 = 0x13
+UCOEF1 = 0x14
+UCOEF2 = 0x15
+UCOEF3 = 0x16
+RESPONSE_REG = 0X20     # returns error status from device
+CHLIST = 0x01     # channel list... write bytes to this address to enable parts of sensor
+EN_UV = 0x80
+EN_ALS_IR = 0x20
+PARAM_RD = 0x2E
+ENALSVIS = 0x10     # enables visible light reading
+MEASRATE0 = 0x08
+PARAM_SET = 0xA0     # sets parameters written to device
+ALS_IR_DATA0 = 0x24
+ALS_IR_DATA1 = 0x25
+
+# write 0x17 to hardware key register to begin proper operation
+def write_to_hwkey(bus):
+     bus.write_byte_data(UV_SENSOR_ADDR, HW_KEY_REGISTER, 0x17)
+     # enable these comments for troubleshooting...if device is on and working,
+          # it should return 0x17
+     # read_hwkey = bus.read_byte_data(UV_SENSOR_ADDR, HW_KEY_REGISTER)
+     # print(hex(read_hwkey)) # enable these comments for troubleshooting...should return
+     # return read_hwkey
+
+# create function to allow for writing and setting parameters to device (mostly for use w/ CHLIST?)
+def write_parameter(bus, parameter, value):
+     bus.write_byte_data(UV_SENSOR_ADDR, PARAM_WR, value)
+     bus.write_byte_data(UV_SENSOR_ADDR, COMMAND_REGISTER, parameter | PARAM_SET)
+     # enable these comments for troubleshooting...
+     # param_read = bus.read_byte_data(UV_SENSOR_ADDR, PARAM_RD)
+     # print(hex(param_read))
+     # return param_read
+
+# enable UV coefficients
+def enable_UV_coeff(bus, register, number):
+     bus.write_byte_data(UV_SENSOR_ADDR, register, number)
+
+# force a single measurement by writing the force measure command to command register
+def force_measure(bus):
+     bus.write_byte_data(UV_SENSOR_ADDR, COMMAND_REGISTER, 0x06)
+
+# get the LSB UV data reading
+def get_UV_LSB(bus):
+     raw_uv_LSB = bus.read_word_data(UV_SENSOR_ADDR, UV_DATA0)
+     print("UV LSB reading " + str(raw_uv_LSB))
+     return raw_uv_LSB
+
+def get_vis_LSB(bus):
+     raw_vis_LSB = bus.read_word_data(UV_SENSOR_ADDR, ALS_VIS_DATA0)
+     print("vis LSB reading " + str(raw_vis_LSB))
+     return raw_vis_LSB
+
+def get_IR_LSB(bus):
+     raw_read_IR = bus.read_word_data(UV_SENSOR_ADDR, ALS_IR_DATA0)
+     print("IR " + str(raw_read_IR))
+     return raw_read_IR
+
+# read error from response register
+def get_response(bus):
+     resp_read = bus.read_byte_data(UV_SENSOR_ADDR, RESPONSE_REG)
+     print(resp_read)
+     return resp_read
+
+time.sleep(.01)
+
+write_to_hwkey(bus)
+time.sleep(.01)
+
+enable_UV_coeff(bus, UCOEF0, 0x29)
+enable_UV_coeff(bus, UCOEF1, 0x89)
+enable_UV_coeff(bus, UCOEF2, 0x02)
+enable_UV_coeff(bus, UCOEF3, 0x00)
+
+write_parameter(bus, CHLIST, EN_UV | ENALSVIS | EN_ALS_IR)    # enables UV and visible light channels to receive data
+
+
+force_measure(bus)
+time.sleep(.01)
+
+
+get_vis_LSB(bus)
+
+get_IR_LSB(bus)
+
+get_UV_LSB(bus)
+
+get_response(bus)
