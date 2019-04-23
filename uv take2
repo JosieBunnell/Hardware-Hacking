@@ -6,13 +6,13 @@ import time
 
 bus = smbus.SMBus(1) # connects to i2C channel 1 and GPIO i2C pins
 
-SENSOR_ADDRESS = 0x60 # The address of the i2c device in hex without the r/w bit
+UV_SENSOR_ADDR = 0x60 # The i2c device address of the UV sensor
 
 COMMAND_REGISTER = 0X18    # write commands to this register (see pg. 22 of data sheet)
-HW_KEY_REGISTER = 0X07
-PARAM_WR = 0x17    # 'mailbox register for passing parameters from host to sequencer'
-UV_INDEX = 0x2C     #aux_data0/uvindex0
-UV_INDEX2 = 0x2D
+HW_KEY_REGISTER = 0X07     # 'hardware key'... must write 0x17 to this address for operation
+PARAM_WR = 0x17            # 'mailbox register for passing parameters from host to sequencer'
+UV_DATA0 = 0x2C            #aux_data0/uvindex0
+UV_DATA1 = 0x2D
 ALS_VIS_DATA0 = 0x22
 ALS_VIS_DATA1 = 0x23
 UCOEF0 = 0x13
