@@ -1,0 +1,213 @@
+#!/usr/bin/python3
+#Josie and Sky (josephinebunnell@bennington.edu, skyleilani@bennington.edu)
+#4.23.19
+
+import smbus
+import RPi.GPIO as GPIO
+import time
+
+GPIO.setmode(GPIO.BOARD)
+
+GPIO.setup(13, GPIO.OUT)
+GPIO.setup(15, GPIO.OUT)
+GPIO.setup(16, GPIO.OUT)
+GPIO.setup(18, GPIO.OUT)
+GPIO.setup(22, GPIO.OUT)
+
+
+bus = smbus.SMBus(1) # connects to i2C channel 1 and GPIO i2C pins
+
+UV_SENSOR_ADDR = 0x60 # the i2c device address of the UV sensor
+COMMAND_REGISTER = 0X18    # write commands to this register (see pg. 22 of data sheet)
+
+
+# Parameters used later in calling write_parameter
+CHLIST = 0x01     # channel list... write bytes to this address to enable parts of sensor
+EN_UV = 0x80
+EN_ALS_IR = 0x20
+ENALSVIS = 0x10     # enables visible light reading
+
+
+# Function: write_to_hwkey - send write parameter( 0x17 ) to hardware key register to begin proper operation
+# Params: bus - bus to write to
+# No return
+def write_to_hwkey(bus):
+     hw_key_register = 0x07  # hardware key...must write 0x17 to this i2c address for operation
+     bus.write_byte_data(UV_SENSOR_ADDR, hw_key_register, 0x17)
+     # enable these comments for troubleshooting...if device is on and working,
+          # it should return 0x17
+     # read_hwkey = bus.read_byte_data(UV_SENSOR_ADDR, hw_key_register )
+     # print(hex(read_hwkey)) # enable these comments for troubleshooting...should return
+     # return read_hwkey
+
+
+# Function: write_parameter - allows for writing and setting parameters to device (mostly for use w/ CHLIST?)
+# Params: bus - bus to write to, command - command byte to write to command register, data - data written to param_wr to
+#               enable channels in CHLIST
+# No return
+def write_parameter(bus, command, data):
+     param_set = 0xA0 # sets parameters written to device
+     param_wr = 0x17   # 'mailbox register for passing parameters from host to sequencer'
+     param_rd = 0x2E
+     bus.write_byte_data(UV_SENSOR_ADDR, param_wr, data)
+     bus.write_byte_data(UV_SENSOR_ADDR, COMMAND_REGISTER, command | param_set)
+     # enable these comments for troubleshooting...
+     # param_read = bus.read_byte_data(UV_SENSOR_ADDR, param_rd)
+     # print(hex(param_read))
+     # return param_read
+
+# Function: enable_UV_coeff - enables UV coefficients
+# Params: bus - points to our bus, register - register to write to,  data - Data sent to register
+# No return
+def enable_UV_coeff(bus, coef_register, data):
+     bus.write_byte_data(UV_SENSOR_ADDR, coef_register, data)
+
+
+# Function: force_measure -  forces a single measurement by writing the force measure command to command register
+# Params: bus - bus to write to
+# No return
+def force_measure(bus):
+     bus.write_byte_data(UV_SENSOR_ADDR, COMMAND_REGISTER, 0x06)
+
+
+# Function: get_UV_LSB - gets the LSB UV data reading
+# Params: bus - bus to write to
+# Return: Converted UV reading
+def get_UV_LSB(bus):
+     UV_data = 0x2C  #aux_data0/uvindex0, stores LSB of UV reading
+     raw_uv_LSB = bus.read_word_data(UV_SENSOR_ADDR, UV_data)
+
+     uv_read = raw_uv_LSB / 100 # converting from lux to UV
+     #print("UV reading: " + str(uv_read))
+
+
+
+     return uv_read
+
+
+# Function: get_vis_LSB - gets least significant byte of visible light reading
+# Params: bus - bus to write to
+# Return: LSB of visible light reading
+def get_vis_LSB(bus):
+     als_VIS_data = 0x22     # stores LSB of visible light reading
+     raw_vis_LSB = bus.read_word_data(UV_SENSOR_ADDR, als_VIS_data)
+     #print("Visible light reading: " + str(raw_vis_LSB) + " lx")
+
+     return raw_vis_LSB
+
+# Function: get_IR_LSB - gets least significant byte of infared light reading
+# Params: bus - bus to write to
+# Return: LSB of Infared reading
+def get_IR_LSB(bus):
+     als_IR_data = 0x24
+     raw_read_IR = bus.read_word_data(UV_SENSOR_ADDR, als_IR_data)
+     #print("Infared light reading: " + str(raw_read_IR) + " lx")
+
+     return raw_read_IR
+
+
+# Function: get_response - reads error message from response register
+# Param: bus - bus to write to
+# Returns: resp_read - error
+def get_response(bus):
+     response_reg = 0X20  # returns error status from device
+     resp_read = bus.read_byte_data(UV_SENSOR_ADDR, response_reg)
+
+     #print(resp_read)
+
+     return resp_read
+
+def LED_control(reading):
+ 
+    # GREEN  - PIN 13 - <2 READING
+    if(reading <= float(2)):
+
+     GPIO.output(13, GPIO.HIGH)
+#     time.sleep (0.5)
+#     GPIO.output(13, GPIO.LOW)
+#     time.sleep(0.5)
+
+     GPIO.output(15, GPIO.LOW)
+     GPIO.output(16, GPIO.LOW)
+     GPIO.output(18, GPIO.LOW)
+     GPIO.output(22, GPIO.LOW)
+
+    # YELLOW - PIN 15 - 3-5 READING
+    elif(reading <= float(5)) and (reading >= float(3)):
+
+     GPIO.output(15, GPIO.HIGH)
+#     time.sleep(0.5)
+#     GPIO.output(15, GPIO.LOW)
+#     time.sleep(0.5)
+
+     GPIO.output(13, GPIO.LOW)
+     GPIO.output(16, GPIO.LOW)
+     GPIO.output(18, GPIO.LOW)
+     GPIO.output(22, GPIO.LOW)
+
+    # ORANGE - PIN 16 - 6 - 7 READING
+    elif(reading == float(6)) or (reading == float(7)):
+ 
+     GPIO.output(16, GPIO.HIGH)
+#     time.sleep(0.5)
+#     GPIO.output(16, GPIO.LOW)
+#     time.sleep(0.5)
+
+     GPIO.output(13, GPIO.LOW)
+     GPIO.output(15, GPIO.LOW)
+     GPIO.output(18, GPIO.LOW)
+     GPIO.output(22, GPIO.LOW)
+
+    # RED - PIN 18 - 8 - 10 READING
+    elif(reading <= float(10)) and (reading >= float(8)):
+
+     GPIO.output(18, GPIO.HIGH)
+#     time.sleep(0.5)
+#     GPIO.output(18, GPIO.LOW)
+#     time.sleep(0.5)
+
+     GPIO.output(13, GPIO.LOW)
+     GPIO.output(15, GPIO.LOW)
+     GPIO.output(16, GPIO.LOW)
+     GPIO.output(22, GPIO.LOW)
+
+ # PURPLE - PIN 22 - >11 READING
+    elif(reading >= float(11)):
+
+     GPIO.output(22, GPIO.HIGH)
+#     time.sleep(0.5)
+#     GPIO.output(22, GPIO.LOW)
+#     time.sleep(0.5)
+
+     GPIO.output(13, GPIO.LOW)
+     GPIO.output(15, GPIO.LOW)
+     GPIO.output(16, GPIO.LOW)
+     GPIO.output(18, GPIO.LOW)
+
+
+write_to_hwkey(bus) # sending write parameter to hardware key register to begin operation
+
+time.sleep(.01) # delays the program for a moment to ensure the writing was received
+
+
+# in order to enable UV readings we enable four different UV coefficient registers by writing a different command to each
+enable_UV_coeff(bus, 0x13, 0x29)
+enable_UV_coeff(bus, 0x14, 0x89)
+enable_UV_coeff(bus, 0x15, 0x02)
+enable_UV_coeff(bus, 0x16, 0x00)
+
+write_parameter(bus, CHLIST, EN_UV | ENALSVIS | EN_ALS_IR) # enables UV and visible light channels to receive data
+
+while True:
+
+    force_measure(bus)
+    time.sleep(.01)
+
+    get_vis_LSB(bus)
+    get_IR_LSB(bus)
+    get_response(bus)
+
+    UV_reading = get_UV_LSB(bus)
+
+    LED_control(UV_reading)
+
