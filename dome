@@ -3,7 +3,7 @@
 #--------------------------------------------------------------------
 # Automation of Stickney Observatory pt 1                           -
 # button_dome.py - A program written to allow the use of buttons    -
-# to control the dome's motion.                                     -
+#  to control the dome's motion.                                     -
 # Author(s): Amanda Bacon, Anna McNiff, Emma Salazar, Josie Bunnell -
 #--------------------------------------------------------------------
 
@@ -22,12 +22,20 @@ import json
 # Create an instance of Flask and tie it to this python program
 app = Flask(__name__)
 
-# Set our notch counter to start at 0
+# Set our notch counter to start at 0; notches around inside circumference of dome are used to count/track location/movement
 notches = 0
 
 #GPIO Setup
 # We have many event detects, and also a while True: pass, so we include a GPIO.cleanup() to initially cleanup the program
+# resets ports back to input mode (altered GPIO pins back to low?)
 GPIO.cleanup()
+# hmmmm, found this:
+"""
+Incorrect use of GPIO.cleanup()
+I have seen people using GPIO.cleanup() wrongly at the start of a program, thinking it will clean up all the ports on the Pi. It does no such thing.1 If you put it at the top of your script, it’s just a wasted line of code. It does nothing until you’ve set up some ports for input or output (which we’re covering soon).
+
+Use GPIO.cleanup() on exit, as I’ve shown above, and in slightly more complex situations, as I will show below…
+"""
 
 # Set warnings to false
 GPIO.setwarnings(False)
@@ -46,7 +54,8 @@ GPIO.setup(36, GPIO.IN, pull_up_down = GPIO.PUD_UP) #notch count IR sensor
 GPIO.setup(35, GPIO.IN, pull_up_down = GPIO.PUD_UP) #home IR sensor
 
 # Relays Setup
-# the physical relay setup mimics the physical actions of the previously existing dome control switch
+# the physical relay setup mimics the actions of the previously existing dome control switch by connecting certain wall plug wires
+#  to specific motor wires depending on the direction of motion
 power_relays = (11,16,18) # allows for simultaneous pin manipulation. These relays control the dome movement/power to motor wires
 directional_relays = (13,15) # allows for simultaneous pin manipulation. These relays control the direction of dome movement
 # set relay GPIO pins to output
