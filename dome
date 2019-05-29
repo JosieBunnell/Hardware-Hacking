@@ -1,10 +1,13 @@
 #!/usr/bin/python3
 
-#------------------------------------------------------------------------
-#Author(s): Amanda Bacon, Anna McNiff, Emma Salazar, Josie Bunnell      -
-#Automation of Stickney Observatory                                     -
-#------------------------------------------------------------------------
+#--------------------------------------------------------------------
+# Automation of Stickney Observatory pt 1                           -
+# button_dome.py - A program written to allow the use of buttons    -
+# to control the dome's motion.                                     -
+# Author(s): Amanda Bacon, Anna McNiff, Emma Salazar, Josie Bunnell -
+#--------------------------------------------------------------------
 
+# Import modules for our program
 import time
 from datetime import datetime
 import RPi.GPIO as GPIO
@@ -12,270 +15,183 @@ import smbus
 import sys
 import os
 
+# UI (user interface) imports
+from flask import Flask, request, abort, jsonify
+import json
+
+# Create an instance of Flask and tie it to this python program
+app = Flask(__name__)
+
+# Set our notch counter to start at 0
 notches = 0
 
+#GPIO Setup
+# We have many event detects, and also a while True: pass, so we include a GPIO.cleanup() to initially cleanup the program
 GPIO.cleanup()
 
-#set warnings to false
+# Set warnings to false
 GPIO.setwarnings(False)
 
-#set up mode for GPIO
+# Set up mode for GPIO
 GPIO.setmode(GPIO.BOARD)
 
-#Buttons; set button GPIO pins to input, *what does pull up down do??*
-GPIO.setup(8, GPIO.IN, pull_up_down = GPIO.PUD_UP) #counter clockwise
-GPIO.setup(10, GPIO.IN, pull_up_down = GPIO.PUD_UP) #home
-GPIO.setup(22, GPIO.IN, pull_up_down = GPIO.PUD_UP) #e stop
-GPIO.setup(7, GPIO.IN, pull_up_down = GPIO.PUD_UP) #clockwise
+# Buttons Setup; set GPIO pins to input, also set pins to HIGH as default instead of LOW using pull_up_down
+GPIO.setup(8, GPIO.IN, pull_up_down = GPIO.PUD_UP) #counter clockwise button
+GPIO.setup(10, GPIO.IN, pull_up_down = GPIO.PUD_UP) #home button
+GPIO.setup(22, GPIO.IN, pull_up_down = GPIO.PUD_UP) #e stop button
+GPIO.setup(7, GPIO.IN, pull_up_down = GPIO.PUD_UP) #clockwise button
 
-#IR; set IR sensor GPIO pins to output, pullupdown???
-GPIO.setup(36, GPIO.IN, pull_up_down = GPIO.PUD_UP) #notch count
-GPIO.setup(35, GPIO.IN, pull_up_down = GPIO.PUD_UP) #home sensor
-#notches = 0
+# IR Sensors Setup; set GPIO pins to input, also set pins to HIGH as default instead of LOW using pull_up_down
+GPIO.setup(36, GPIO.IN, pull_up_down = GPIO.PUD_UP) #notch count IR sensor
+GPIO.setup(35, GPIO.IN, pull_up_down = GPIO.PUD_UP) #home IR sensor
 
-#Relays; set relay GPIO pins to output
-GPIO.setup(11, GPIO.OUT) #R0,R00
-GPIO.setup(13, GPIO.OUT) #R1
-GPIO.setup(15, GPIO.OUT) #R2
-GPIO.setup(16, GPIO.OUT) #R3
-GPIO.setup(18, GPIO.OUT) #R4
+# Relays Setup
+# the physical relay setup mimics the physical actions of the previously existing dome control switch
+power_relays = (11,16,18) # allows for simultaneous pin manipulation. These relays control the dome movement/power to motor wires
+directional_relays = (13,15) # allows for simultaneous pin manipulation. These relays control the direction of dome movement
+# set relay GPIO pins to output
+#GPIO.setup(11, GPIO.OUT) # R0,R00 relay
+#GPIO.setup(13, GPIO.OUT) # R1 relay
+#GPIO.setup(15, GPIO.OUT) # R2 relay
+#GPIO.setup(16, GPIO.OUT) # R3 relay
+#GPIO.setup(18, GPIO.OUT) # R4 relay
 
-#IR SENSOR; detects movement of dome through counting notch interference pattern
-#returns: notch count number input?
-#params: ???? how many notches to move? based on azimuth?
-def print_state(input):
-    input = GPIO.input(36)
-    print("This is the input", input) #0 for interference, 1 for solid
+#DID NOT COMMENT THESE BECAUSE HAVE QUESTIONS
+# IR Sensor notch count function 1 (prints the beam state and notch count)
+def print_IR_state(input):
+    input = GPIO.input(36) # what is input? number of notches we want the dome to move? another function? somewhat confused - josie
+    print("This is the input", input) # 0 for interference, 1 for solid
+    global notches # set notches as a global variable
+    if input != 0: # if the sensor is not blocked; i.e., is in a notch hole,
+        print("Solid") # print "solid," indicative of no interference
+        notches = notches + 1 # add to our counter,
+        print(notches) # then print the current notch value
+    else: # otherwise, if the sensor is blocked,
+        print("Beam interference") # print that there is an interference.
+#GPIO.add_event_detect(36, GPIO.BOTH, callback = print_IR_state) # detects a change in electrical signal from HIGH to LOW or LOW to HIGH
+# what does it do once it detects this change in signal? used to detect button presses while rest of code is running?
+
+# IR Sensor notch count function 2 (returns the notch count and does not print anything)
+def notch_counter(input):
+    input = GPIO.input(36) # confused again about what this input means
+    direction_relay = GPIO.input(13) # use this variable after chosing an arbitrary relay that goes high or low depending on the direction. We count based on the direction the dome is moving
+         # don't quite understand the above comment... also this variable name is SUPER similar to one already used above
     global notches
-    if input != 0:
-        print("Solid")
+    if input != 0: # and direction_relay == False:--the sensor is in a notch hole, and the dome is moving clockwise
         notches = notches + 1
-        print(notches)
-    else:
-        print("Beam interference")
-GPIO.add_event_detect(36, GPIO.BOTH, callback = print_state) #what does this do
+#    if input != 0 and direction_relay == True:--the sensor is in a notch hole, and the dome is moving counter clockwise
+#        notches = notches - 1 #thereby subtracting from the notch count
+GPIO.add_event_detect(36, GPIO.BOTH, callback = notch_counter) #waits for the sensor to sense a change in input 
+     #what happens when sensor senses the change?
 
 #E stop button--completely quits program instead of rebooting (need to put in /etc/rc.local file)
+#When e stop button is pressed, set the relays to low and restart the code
 def restart(e_stop):
-    e_stop = GPIO.input(22)
+    e_stop = GPIO.input(22) # rip me why don't i understand these inputs...is it just setting the fn parameter to work with the specified gpio pin?
     print("Set relays to low")
-    GPIO.output(15, GPIO.LOW) #R2
-    GPIO.output(18, GPIO.LOW) #R4
-    GPIO.output(13, GPIO.LOW) #R1
-    GPIO.output(16, GPIO.LOW) #R3
+    GPIO.output(directional_relays, GPIO.LOW)  # set relays R1 and R2 to low simultaneously
+    time.sleep(0.1) # allow for directional relays to switch before power_relays
+    GPIO.output(power_relays, (GPIO.HIGH,GPIO.LOW,GPIO.LOW)) # set relays R3,R4 to low simultaneously and keep R0,R00 high
+         # why keep R0 and R00 high?
     os.system("sudo shutdown -r now") #sudo reboot
-GPIO.add_event_detect(22, GPIO.FALLING, callback = restart)
+GPIO.add_event_detect(22, GPIO.FALLING, callback = restart) # detects HIGH to LOW signal... then does what?
 
-#Motor functions
-#switches on relays to cause clockwise movement
-#returns: anything? just moves dome?
-#params: none?
+#Alternative e stop code
+#When e stop button is pressed, set the relays to low and restart the code
+def emergency_stop(e_stop):
+    e_stop = GPIO.input(22)
+    print("Stopping all systems.")
+    GPIO.output(directional_relays, GPIO.LOW)  # set relays R1 and R2 to low simultaneously
+    time.sleep(0.1) # allow for directional relays to switch before power_relays
+    GPIO.output(power_relays, (GPIO.HIGH,GPIO.LOW,GPIO.LOW)) # set relays R3,R4 to low simultaneously and keep R0,R00 high
+    print("Restarting the program.")
+    python = sys.executable
+    os.execl(python, python, *sys.argv)
+#GPIO.add_event_detect(22, GPIO.FALLING, callback = restart)
+#DID NOT COMMENT THESE BECAUSE HAVE QUESTIONS
+
+# Motor functions:
+# Dome clockwise movement; set specific relays to high and low to control motor direction via voltage flow from wall plug to motor wires
 def go_clockwise():
+    GPIO.output(directional_relays, GPIO.LOW) # set relays R1 and R2 to low simultaneously
+    time.sleep(0.1) # allow for directional relays to switch before power_relays
+    GPIO.output(power_relays, GPIO.HIGH) # set relays R0,R00,R3,R4 to high simultaneously
     print("Moving clockwise.")
-    GPIO.output(11, GPIO.HIGH) #R0,R00
-    GPIO.output(13, GPIO.LOW) #R1
-    GPIO.output(16, GPIO.HIGH) #R3
-    GPIO.output(15, GPIO.LOW) #R2
-    GPIO.output(18, GPIO.HIGH) #R4  
 
-#switches on relays to cause counter clockwise movement
-#returns:
-#params:
+# Dome counter clockwise movement; set all relays to high to change which motor wires are connected thereby changing direction of motion
 def go_counter_clockwise():
+    GPIO.output(directional_relays, GPIO.HIGH)  #set relays R1 and R2 to high simultaneously
+    time.sleep(0.1) #allow for directional relays to switch before power_relays
+    GPIO.output(power_relays, GPIO.HIGH) # set relays R0,R00,R3,R4 to high simultaneously
     print("Moving counter clockwise.")
-    GPIO.output(15, GPIO.HIGH) #R2
-    GPIO.output(18, GPIO.HIGH) #R4
-    GPIO.output(11, GPIO.HIGH) #R0,R00
-    GPIO.output(13, GPIO.HIGH) #R1
-    GPIO.output(16, GPIO.HIGH) #R3
 
-#turns all relays to low to stop the motor
-#returns:
-#params:
+# Stop the motor; set all relays to low to prevent motion of dome
 def stop_motor():
+    GPIO.output(directional_relays, GPIO.LOW)  # set relays R1 and R2 to low simultaneously
+    time.sleep(0.1) # allow for directional relays to switch before power_relays
+    GPIO.output(power_relays, GPIO.LOW) # set relays R0,R00,R3,R4 to low simultaneously
     print("Stopping motor.")
-    GPIO.output(11, GPIO.LOW) #R0,R00
-    GPIO.output(13, GPIO.LOW) #R1
-    GPIO.output(15, GPIO.LOW) #R2
-    GPIO.output(16, GPIO.LOW) #R3
-    GPIO.output(18, GPIO.LOW) #R4
 
-#activates relays to move dome to home position
-#returns: 
-#params:
+# Home button:
+# When the user presses the home button, it will move in the clockwise direction until the beam is broken, indicating home position has been reached
 def go_home(button_status_home):
     button_status_home = GPIO.input(10)
+    if button_status_home == False: # if button has been pressed,
+        print("Home button pressed. Going home.")
+        
+# Stops motor when dome reaches home position
+def at_home(home_sensor): 
     home_sensor = GPIO.input(35)
-    if button_status_home == False:
-        print ("Home button pressed. Going home.")
-        if home_sensor != 0: 
-            print ("Not at home position. Going home.")      
-            go_clockwise()
-        if home_sensor == 0:
-            print ("At home position.")
-            stop_motor()
-GPIO.add_event_detect(10, GPIO.FALLING, callback = go_home)
-    
-#True = 1, False = 0
-#pressing button to move dome clockwise and counter clockwise
+    if home_sensor != 0: # if there is no intereference from IR home detection sensors,
+        go_clockwise() # move the dome in the clockwise direction
+    if home_sensor == 0: # if there is interference from IR home detection sensors,
+        print ("At home position.") 
+        stop_motor()
+time.sleep(0.3) # allows for debouncing of buttons
+GPIO.add_event_detect(10, GPIO.FALLING, callback = go_home, bouncetime = 100) # detects HIGH to LOW electrical signal from GPIO pin, 
+     # bouncetime adds a debounce to the buttons, allows them to give signal continously???
+GPIO.add_event_detect(35, GPIO.FALLING, callback = at_home) # detects HIGH to LOW signal, acknowledges the stop at home position???
+
+# True = 1, False = 0 # what?
+# Button clockwise and counter clockwise logic
 def moving(button_status_cc):
     button_status_cc = GPIO.input(8)
     button_status_c = GPIO.input(7)
-    if button_status_c == False:
+    if button_status_c == False: # if the clockwise button is pressed, print status and set previously established relays to high and low
         print("Clockwise button pressed. Moving clockwise.")
-        GPIO.output(11, GPIO.HIGH) #R0,R00
-        GPIO.output(13, GPIO.LOW) #R1
-        GPIO.output(16, GPIO.HIGH) #R3
-        GPIO.output(15, GPIO.LOW) #R2
-        GPIO.output(18, GPIO.HIGH) #R4  
-        print_state(input)
-    elif button_status_cc == False:
+        GPIO.output(directional_relays, GPIO.LOW) # set relays R1 and R2 to low simultaneously
+        time.sleep(0.1) # allow for directional relays to switch before power_relays
+        GPIO.output(power_relays, GPIO.HIGH) # set relays R0,R00,R3,R4 to high simultaneously
+        print_IR_state(input) # call the IR notch count function to obtain counts
+    elif button_status_cc == False: # if the counterclockwise button is pressed, print the status and set all relays to high.
         print("Counter clockwise button pressed. Moving counter clockwise.")
-        GPIO.output(15, GPIO.HIGH) #R2
-        GPIO.output(18, GPIO.HIGH) #R4
-        GPIO.output(11, GPIO.HIGH) #R0,R00
-        GPIO.output(13, GPIO.HIGH) #R1
-        GPIO.output(16, GPIO.HIGH) #R3
-        print_state(input)
-    elif button_status_c == True and button_status_cc == True:
-        print("Not moving.")
-        GPIO.output(11, GPIO.LOW) #R0,R00
-        GPIO.output(13, GPIO.LOW) #R1
-        GPIO.output(15, GPIO.LOW) #R2
-        GPIO.output(16, GPIO.LOW) #R3
-        GPIO.output(18, GPIO.LOW) #R4
-    if button_status_c == False and button_status_cc == False: #where False = pushing button
+        GPIO.output(directional_relays, GPIO.HIGH)  #set relays R1 and R2 to high simultaneously
+        time.sleep(0.1) #allow for directional relays to switch before power_relays
+        GPIO.output(power_relays, GPIO.HIGH) # set relays R0,R00,R3,R4 to high simultaneously
+        print_IR_state(input) # call the IR notch count function to obtain counts
+    elif button_status_c == True and button_status_cc == True: # if both clockwise and counter clockwise are not pressed, dome is not moving
+        print("Not moving.") 
+        GPIO.output(directional_relays, GPIO.LOW)  # set relays R1 and R2 to low simultaneously
+        time.sleep(0.1) # allow for directional relays to switch before power_relays
+        GPIO.output(power_relays, GPIO.LOW) # set relays R0,R00,R3,R4 to low simultaneously
+    if button_status_c == False and button_status_cc == False: # Error handling. User cannot push both buttons. Dome will not move.
         print("Not allowed to press both buttons. Not moving.")
-        GPIO.output(11, GPIO.LOW) #R0,R00
-        GPIO.output(13, GPIO.LOW) #R1
-        GPIO.output(15, GPIO.LOW) #R2
-        GPIO.output(16, GPIO.LOW) #R3
-        GPIO.output(18, GPIO.LOW) #R4
-time.sleep(0.25)
-GPIO.add_event_detect(8, GPIO.FALLING, callback = moving, boucetime = 100)    
-GPIO.add_event_detect(7, GPIO.FALLING, callback = moving, bouncetime = 100)
+        GPIO.output(directional_relays, GPIO.LOW)  # set relays R1 and R2 to low simultaneously
+        time.sleep(0.1) # allow for directional relays to switch before power_relays
+        GPIO.output(power_relays, GPIO.LOW) # set relays R0,R00,R3,R4 to low simultaneously
+time.sleep(0.3) # adds to the debounce of buttons
+GPIO.add_event_detect(8, GPIO.FALLING, callback = moving, bouncetime = 100) # detects HIGH to LOW signal, bouncetime adds a debounce to the buttons
+GPIO.add_event_detect(7, GPIO.FALLING, callback = moving, bouncetime = 100) # detects HIGH to LOW signal, bouncetime adds a debounce to the buttons
 
+# ahem what does this do?
 try:
     while True:
         pass
-    
+
 except KeyboardInterrupt:
-    GPIO.output(15, GPIO.LOW) #R2
-    GPIO.output(18, GPIO.LOW) #R4
-    GPIO.output(11, GPIO.LOW) #R0,R00
-    GPIO.output(13, GPIO.LOW) #R1
-    GPIO.output(16, GPIO.LOW) #R3
+    GPIO.output(directional_relays, GPIO.LOW)  # set relays R1 and R2 to low simultaneously
+    time.sleep(0.1) # allow for directional relays to switch before power_relays
+    GPIO.output(power_relays, GPIO.LOW) # set relays R0,R00,R3,R4 to low simultaneously
     GPIO.cleanup()
 
-#NOT TESTED BELOW
-            
-#Azimuth location
-def go_location(azimuth, notches):
-    while notches < azimuth:
-        go_clockwise()
-        stop_motor()
-
-def go_new_location(azimuth, notches):
-    if(notches < azimuth):
-        go_clockwise()
-    elif(notches > azimuth):
-        go_counterwise()
-    else:
-        stop_motor()
-
-
-
-
-
-#WORKS SEPARATELY
-#CC--sets 0,00,1,3 high (works)
-#def counterclockwise():
-#    try: 
-#        while True:
-#            button_status_cc = GPIO.input(8)
-#            if button_status_cc == False:
-#                print("Counter clockwise button pressed. Moving counter clockwise.")
-#                GPIO.output(11, GPIO.HIGH) #R0,R00
-#                GPIO.output(13, GPIO.HIGH) #R1
-#                GPIO.output(16, GPIO.HIGH) #R3
-#                GPIO.output(15, GPIO.LOW) #R2
-#                GPIO.output(18, GPIO.LOW) #R4                                        
-#            else:
-#                print("Stopped moving counter clockwise.")
-
-#    except KeyboardInterrupt:
-#        GPIO.output(15, GPIO.LOW)
-#        GPIO.output(18, GPIO.LOW)
-#        GPIO.output(11, GPIO.LOW)
-#        GPIO.output(13, GPIO.LOW)
-#        GPIO.output(16, GPIO.LOW)
-#        GPIO.cleanup()
-#counterclockwise()
-
-#WORKS SEPARATELY
-#C--sets relay 2 and 4 high (works)
-#def clockwise():
-#    try: 
-#        while True:
-#           button_status_c = GPIO.input(7)
-#           if button_status_c == False:
-#               print("Clockwise button pressed. Moving clockwise.")
-#               GPIO.output(15, GPIO.HIGH) #R2
-#               GPIO.output(18, GPIO.HIGH) #R4
-#               GPIO.output(11, GPIO.LOW) #R0,R00
-#               GPIO.output(13, GPIO.LOW) #R1
-#               GPIO.output(16, GPIO.LOW) #R3
-#           else:
-#               print("Stopped moving clockwise.")
-
-#    except KeyboardInterrupt:
-#        GPIO.output(15, GPIO.LOW)
-#        GPIO.output(18, GPIO.LOW)
-#        GPIO.output(11, GPIO.LOW)
-#        GPIO.output(13, GPIO.LOW)
-#        GPIO.output(16, GPIO.LOW)
-#        GPIO.cleanup()
-#clockwise()
-
-#GPIO.cleanup()
-
-#AT THE MOMENT, PUSH E STOP AND THEN RELAYS TO EXIT
-#STOP button turns relays low when e_stop pressed 
-#button_status_STOP = GPIO.input(22)
-#button_status_c = GPIO.input(7)
-#button_status_cc = GPIO.input(8)
-#def loop(button_status_STOP,button_status_c,button_status_cc):
-#    try:
-#        button_status_STOP = GPIO.input(22)
-#        if button_status_STOP == 1:
-#            GPIO.output(15, GPIO.HIGH)
-#            GPIO.output(18, GPIO.HIGH)
-#            GPIO.output(13, GPIO.HIGH)
-#            GPIO.output(16, GPIO.HIGH)
-#        if button_status_STOP == 0:
-#            GPIO.output(15, GPIO.LOW)
-#            GPIO.output(18, GPIO.LOW)
-#            GPIO.output(13, GPIO.LOW)
-#            GPIO.output(16, GPIO.LOW)
-#            GPIO.add_event_detect(22, GPIO.BOTH, callback = loop)
-#        while True:
-#            button_status_c = button_status_c = GPIO.input(7)
-#            button_status_cc = button_status_cc = GPIO.input(8)
-#            if button_status_c == False and button_status_cc == False:
-#                print("Restart")
-#                break
-
-#    except KeyboardInterrupt:
-#        GPIO.output(15, GPIO.LOW)
-#        GPIO.output(18, GPIO.LOW)
-#        GPIO.output(11, GPIO.LOW)
-#        GPIO.output(13, GPIO.LOW)
-#        GPIO.output(16, GPIO.LOW)
-#        GPIO.cleanup()
-#loop(button_status_STOP,button_status_c,button_status_cc)
-#if __name__ == '__main__':
-#    loop(button_status_STOP,button_status_c,button_status_cc)
-#    GPIO.cleanup()
-#    os.execv(sys.executable, ['python3'] + sys.argv)
-
-#GPIO.cleanup()
+GPIO.cleanup()
