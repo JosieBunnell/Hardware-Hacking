@@ -15,7 +15,7 @@ import smbus
 import sys
 import os
 
-# UI imports
+# UI (user interface) imports
 from flask import Flask, request, abort, jsonify, url_for, redirect, render_template
 import json
 
@@ -32,19 +32,21 @@ GPIO.setwarnings(False)
 # Set up mode for GPIO
 GPIO.setmode(GPIO.BOARD)
 
-# Buttons Setup
+# Buttons Setup; set GPIO pins to input, also set pins to HIGH as default instead of LOW using pull_up_down
 GPIO.setup(8, GPIO.IN, pull_up_down = GPIO.PUD_UP) # counter clockwise button
 GPIO.setup(10, GPIO.IN, pull_up_down = GPIO.PUD_UP) # home button
 GPIO.setup(22, GPIO.IN, pull_up_down = GPIO.PUD_UP) # e stop button
 GPIO.setup(7, GPIO.IN, pull_up_down = GPIO.PUD_UP) # clockwise button
 
-# IR Sensors Setup
+# IR Sensors Setup; set GPIO pins to input, also set pins to HIGH as default instead of LOW using pull_up_down
 GPIO.setup(36, GPIO.IN, pull_up_down = GPIO.PUD_UP) # notch count IR sensor
 GPIO.setup(35, GPIO.IN, pull_up_down = GPIO.PUD_UP) # home IR sensor
 
 # Relays Setup
-power_relays = (11,16,18) # allows for simultaneous pin manipulation, where 'power' means dome movement 
-directional_relays = (13,15) # allows for simultaneous pin manipulation, where 'directional' means setup of relays 
+# the physical relay setup mimics the physical actions of the previously existing dome control switch
+power_relays = (11,16,18) # allows for simultaneous pin manipulation. These relays control the dome movement/power to motor wires
+directional_relays = (13,15) # allows for simultaneous pin manipulation. These relays control the direction of dome movement
+# set relay GPIO pins to output 
 #GPIO.setup(11, GPIO.OUT) # R0,R00 relay
 #GPIO.setup(13, GPIO.OUT) # R1 relay
 #GPIO.setup(15, GPIO.OUT) # R2 relay
@@ -74,6 +76,7 @@ def restart(e_stop):
     os.system("sudo shutdown -r now") #sudo reboot
 #GPIO.add_event_detect(22, GPIO.FALLING, callback = restart)
 #DID NOT COMMENT THESE BECAUSE HAVE QUESTIONS
+# to future josie: add comments to these when comments from same code in pt 1 are clarified
 
 # Motor functions:
 # Dome clockwise movement
@@ -97,12 +100,12 @@ def stop_motor():
     GPIO.output(power_relays, (GPIO.HIGH,GPIO.LOW,GPIO.LOW)) # set relays R3,R4 to low simultaneously and keep R0,R00 high
 #    print("Stopping motor.")
 
-# Get our azimuth input
+# Azimuth input: converts azimuth value given by user into notches later registered by IR sensor to move to desired location
 def get_azimuth(user_input):
     user_azimuth = user_input * (494/360)
     return user_azimuth
 
-# Go to our location given user input from an html page
+# Go to our location given user input from an html page; relays are activated to cause dome to move to desired location
 @app.route("/next-location", methods=['POST'])
 def go_location():
     go_location_string = '<html>\n <head><title>Welcome to the Stickney Observatory Dome Control</title>\n </head>\n <body>\n \n Hello user. What azimuth is the telescope going to?\n <form action="http://raspberrypi23.local:5000/next-location" method="POST">\n <br>\n Azimuth:\n <input type="number" name="azimuth">\n <input type="submit" name="go" value="Go">\n <br>\n Do you want to go home?\n <input type="submit" name="home" value="Go Home">\n <br>\n Are you finished using the dome?\n <input type="submit" name="shutdown" value="Shut Down System">\n <br>\n Emergency Stop\n <input type="submit" name="estop" value="Emergency Stop">\n <br>\n \n </form>\n </body>\n </html>'
@@ -110,19 +113,19 @@ def go_location():
         if request.form['go'] == 'Go':
             try:
                 azimuth_value = int(request.form['azimuth'])
-                if azimuth_value > 360:
+                if azimuth_value > 360: # maximum possible azimuth
                     bad = "That azimuth is too big, please go back and try again."
                     return bad
-                elif azimuth_value <= 0:
+                elif azimuth_value <= 0: # minimum possible azimuth
                     bad = "That azimuth is too small, please go back and try again."
                     return bad
                 else:
-                    azimuth = int(get_azimuth(azimuth_value))
+                    azimuth = int(get_azimuth(azimuth_value)) # turns aziumth into interger value
                     global notches
-                    if(notches < azimuth):
+                    if(notches < azimuth): # decides clockwise motion of dome to get to given azimuth location
                         while notches < azimuth:
                             go_clockwise()
-                    elif(notches > azimuth):
+                    elif(notches > azimuth): # decides counter-clockwise motion of dome to get to given azimuth location
                         while notches > azimuth:
                             go_counter_clockwise()
                     elif(notches == azimuth): # Emma: I was nervous about the else statement not catching it when it equals the azimuth, so i put this in as a duplicate to be safe?
@@ -130,22 +133,22 @@ def go_location():
                         print("Dome moved and motor stopped.")
                         return go_location_string
                     else:
-                        stop_motor()
+                        stop_motor() # stops motor when location is reached?
             except ValueError:
                 bad = "You gave me a string, not an integer. Please go back and try again."
                 return bad
-        elif request.form['home'] == 'Go Home':
+        elif request.form['home'] == 'Go Home': # dome moves to home position when home button is selected on html page
 #            home_sensor = GPIO.input(35)
 #            while home_sensor != 0:
 #                go_clockwise()
 #            stop_motor()
             return "At home position."
-        elif request.form['shutdown'] == 'Shut Down System':
+        elif request.form['shutdown'] == 'Shut Down System': # shuts down system upon user request from html page button
             GPIO.output(directional_relays, GPIO.LOW)  # set relays R1 and R2 to low simultaneously
             time.sleep(0.1) # allow for directional relays to switch before power_relays
             GPIO.output(power_relays, (GPIO.HIGH,GPIO.LOW,GPIO.LOW)) # set relays R3,R4 to low simultaneously and keep R0,R00 high
             return "Stopping motor. Shutting down."
-        elif request.form['estop'] == 'Emergency Stop':
+        elif request.form['estop'] == 'Emergency Stop': # stops/prevents motion when button is selected on html page
             GPIO.output(directional_relays, GPIO.LOW)  # set relays R1 and R2 to low simultaneously
             time.sleep(0.1) # allow for directional relays to switch before power_relays
             GPIO.output(power_relays, (GPIO.HIGH,GPIO.LOW,GPIO.LOW)) # set relays R3,R4 to low simultaneously and keep R0,R00 high
