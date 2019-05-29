@@ -22,7 +22,7 @@ import json
 # Create an instance of Flask and tie it to this python program
 app = Flask(__name__)
 
-# Set our notch counter to start at 0
+# Set our notch counter to start at 0; notches around inside circumference of dome are used to count/track location/movement
 notches = 0
 
 # GPIO Setup:
